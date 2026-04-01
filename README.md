@@ -1,86 +1,112 @@
-# typescript-template
+# Stocker – Real-time Financial Terminal
 
-A template for a Typescript repository
+A full-stack financial terminal that monitors stocks, funds and market indexes in real-time.
 
-## ESLint Setup
+## Architecture
 
-```javascript
-module.exports = {
-  env: {
-    es2022: true,
-    node: true,
-  },
-  overrides: [
-    {
-      files: ['**/*.js'],
-      extends: ['eslint:recommended'],
-      // https://eslint.org/docs/v8.x/use/configure/language-options#specifying-parser-options
-      parserOptions: {
-        ecmaVersion: '2022',
-      },
-    },
-    {
-      files: ['src**/*.ts'],
-      extends: [
-        'eslint:recommended',
-        'plugin:@typescript-eslint/recommended-type-checked',
-        'plugin:@typescript-eslint/stylistic-type-checked',
-      ],
-      plugins: ['@typescript-eslint'],
-      parser: '@typescript-eslint/parser',
-      parserOptions: {
-        project: true,
-      },
-    },
-  ],
-};
+```
+stocker/
+├── backend/    TypeScript WebSocket backend with plugin-based datasource system
+└── frontend/   Next.js frontend with real-time charts (Recharts)
 ```
 
-The newest version of ESLint is using the new `flatconfig` format. Even though it looks cool sadly
+### Backend (`backend/`)
 
-the adaptation of it in the community has not yet reached to the point where it makes sense to start
+Built with TypeScript + Node.js, exposing a **WebSocket** server (port 4001 by default).
 
-using it. That is why this repo uses the `8.57.0` version which still defaults to the old config
+#### Plugin system
 
-file format. It has some consequences.
+| Plugin | Exchange / Index | Data source |
+|--------|-----------------|-------------|
+| `NasdaqPlugin` | Nasdaq (NMS, NGM, NCM) | Yahoo Finance (free) |
+| `DowJonesPlugin` | NYSE / Dow Jones (^DJI) | Yahoo Finance (free) |
+| `OmxPlugin` | Nasdaq OMX Nordic (.ST, .HE, .CO) | Yahoo Finance (free) |
 
-1. The file has to be in CommonJS format since version `8.57.0` doesn't support anything else
-2. The support both JS and Typescript by using the overrides property.
-3. Note that the `module.exports.overrides[0].parserOptions` needs to have a higher ECMA version
+Each plugin implements the `DataSourcePlugin` interface:
 
-   specified as the default is `ES5`. For the Typescript configuration this is not needed as it
+```ts
+interface DataSourcePlugin {
+  info: PluginInfo;
+  canHandle(symbol: string): boolean;
+  fetchQuote(symbol: string): Promise<Quote>;
+  search(query: string): Promise<Instrument[]>;
+}
+```
 
-   reads the settings from the `tsconfig` when `module.exports.overrides[1].parserOptions.project`
+#### WebSocket protocol
 
-   is set to `true`
+**Client → Server (JSON):**
+| Message | Description |
+|---------|-------------|
+| `{ type: 'subscribe', symbol }` | Start receiving quotes for a symbol |
+| `{ type: 'unsubscribe', symbol }` | Stop receiving quotes for a symbol |
+| `{ type: 'search', query }` | Search for instruments |
 
-## Why is nodemon Used Over tsx watch
+**Server → Client (JSON):**
+| Message | Description |
+|---------|-------------|
+| `{ type: 'quote', data: Quote }` | Latest price data |
+| `{ type: 'subscribed', symbol }` | Subscription confirmed |
+| `{ type: 'unsubscribed', symbol }` | Unsubscription confirmed |
+| `{ type: 'instruments', data: [] }` | Search results |
+| `{ type: 'error', symbol, message }` | Error fetching a symbol |
 
-Because `tsx watch` does not support watching .env file.
+#### Running the backend
 
-## Migration from Jest to Vitest
+```bash
+cd backend
+npm install
+npm run dev        # development (tsx watch)
+npm run build && npm start  # production
+```
 
-1. Uninstall Jest
+Environment variables (`.env`):
+```
+WS_PORT=4001          # WebSocket port (default: 4001)
+POLL_INTERVAL_MS=5000 # Quote poll interval in ms (default: 5000)
+```
 
-   ```bash
-   npm uninstall jest @types/jest
-   npm install -D vitest
-   ```
+### Frontend (`frontend/`)
 
-1. Configure Vitest
+Next.js 16 app with Tailwind CSS and Recharts.
 
-   [vitest config in the repo](vitest.config.ts)
+Features:
+- Real-time price cards with sparkline charts
+- Search instruments (stocks, funds, indexes) by name or ticker
+- Add / remove instruments from the watchlist
+- Auto-reconnecting WebSocket client
+- Defaults: `^IXIC` (Nasdaq), `^DJI` (Dow Jones), `^OMXS30` (OMX Stockholm)
 
-1. Update package.json with test commands referencing `vitest` rather than `jest`
+#### Running the frontend
 
-   ```json
-   {
-     "scripts": {
-       "test": "vitest run",
-       "test:watch": "vitest watch",
-       "test:coverage": "vitest run --coverage"
-     }
-   }
-   ```
+```bash
+cd frontend
+npm install
+cp .env.example .env.local   # configure WS URL if needed
+npm run dev     # development on http://localhost:3000
+npm run build && npm start   # production
+```
 
-1. And ensure to add `import { describe, it, expect } from 'vitest';` at the top of test cases.
+## Quick start (both services)
+
+```bash
+# Terminal 1 – backend
+cd backend && npm install && npm run dev
+
+# Terminal 2 – frontend
+cd frontend && npm install && npm run dev
+```
+
+Open **http://localhost:3000**.
+
+## Data source
+
+All market data is sourced from **Yahoo Finance** (free, no API key required).
+Prices may be delayed up to 15 minutes outside regular market hours.
+
+## Disclaimer
+
+This project uses unofficial Yahoo Finance APIs.
+It is not affiliated with or endorsed by Yahoo Inc.
+Use at your own risk.
+
